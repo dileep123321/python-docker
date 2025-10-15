@@ -1,7 +1,6 @@
 from .helpers import BaseTest
 from .const import *
 
-
 class TestClone(BaseTest):
     """Test the repository cloning, thus running the app"""
 
@@ -18,7 +17,6 @@ class TestClone(BaseTest):
     def test_clone_existing_branch_fail_pip_install(self):
         """Test cloning from an existing repository, an existing branch
         (the requirements-fail branch, that will fail pip install)"""
-        # TODO Create another branch on Python-HelloWorld repository that won't fail but output something different
         output = self.run_container(branch=REQUIREMENTS_FAIL_BRANCH)
         assert PIP_INSTALL_FAILED_ERROR in output
 
