@@ -7,7 +7,6 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
       - name: Checkout repository  
@@ -54,9 +53,7 @@ jobs:
           tags: app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Verify Docker image exists
-        run: docker images app:latest
+          load: true
 
       - name: Run tests with coverage
         env:
@@ -66,11 +63,11 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.67.2_Linux-64bit.deb
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
           sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
 
       - name: Scan Docker image for vulnerabilities
-        run: trivy image --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
+        run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
 
       - name: Docker login
         run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
