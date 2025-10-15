@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository  
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
@@ -32,13 +32,12 @@ jobs:
         run: flake8 . --max-line-length=120 --ignore=F403,F405
 
       - name: Run Bandit security scan
-        run: |
-          bandit -r . --severity-level MEDIUM || true
+        run: bandit -r . --severity-level MEDIUM || true
 
       - name: Run pip-audit dependency scan
         run: pip-audit || true
 
-      # Setup Docker Buildx builder with docker-container driver
+      # Docker Buildx setup
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -63,9 +62,7 @@ jobs:
 
       - name: Install Trivy
         run: |
-          sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
-          sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Scan Docker image for vulnerabilities (non-blocking)
         run: trivy image --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
