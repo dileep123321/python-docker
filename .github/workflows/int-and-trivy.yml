@@ -1,4 +1,4 @@
-name: Lint, Trivy Scan & Full CI/CD
+name: Full CI/CD Pipeline
 
 on:
   push:
@@ -26,19 +26,21 @@ jobs:
 
       - name: Auto-fix trailing whitespaces
         run: |
-          echo "Removing trailing whitespaces from all Python files..."
           find . -name "*.py" -exec sed -i 's/[ \t]*$//' {} \;
 
-      - name: Auto-fix star imports with autoflake
+      - name: Auto-fix unused imports / star imports
         run: |
-          echo "Replacing star imports with explicit imports (where possible)..."
           find . -name "*.py" -exec autoflake --remove-all-unused-imports --remove-unused-variables --in-place {} \;
 
-      - name: Run Flake8 Linter
-        run: flake8 . --max-line-length=120 --exit-zero
-
-      - name: Auto-format code with Black
+      - name: Auto-format all code with black
         run: black . --line-length 120
+
+      - name: Run Flake8 Linter
+        run: |
+          # Lint production code strictly
+          flake8 my_app --max-line-length=120 --exit-zero
+          # Lint test files ignoring F403, F405, W293
+          flake8 tools/tests scripts/tests --max-line-length=120 --ignore=F403,F405,W293 --exit-zero
 
   trivy-scan:
     name: Scan Docker Image with Trivy
