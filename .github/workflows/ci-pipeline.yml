@@ -19,10 +19,22 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Locate requirements.txt
+        id: requirements
+        run: |
+          if [ -f "requirements.txt" ]; then
+            echo "REQ_PATH=requirements.txt" >> $GITHUB_ENV
+          elif [ -f "app/requirements.txt" ]; then
+            echo "REQ_PATH=app/requirements.txt" >> $GITHUB_ENV
+          else
+            echo "ERROR: requirements.txt not found in repo root or app/ folder"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r $REQ_PATH
 
   lint:
     name: 🧼 Linting & Formatting
