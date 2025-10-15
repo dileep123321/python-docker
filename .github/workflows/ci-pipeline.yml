@@ -12,40 +12,71 @@ jobs:
       - name: Checkout repository  
         uses: actions/checkout@v4
 
+      - name: Get changed files
+        uses: tj-actions/changed-files@v11.5
+        id: changed-files
+        with:
+          files: |
+            .dockerignore
+            Dockerfile
+            images.json
+            scripts/**
+            tools/**
+            .github/workflows/**
+
+      # Optional: Debug to see changed files
+      - name: Show changed files
+        run: echo "${{ steps.changed-files.outputs.all_changed_files }}"
+
+      # Run subsequent steps only if any of these files changed or if workflow files changed
+      - name: Run if relevant files changed
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: echo "Relevant files changed, proceeding with build and tests..."
+
       - name: Set up Python
+        if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install flake8 black isort bandit pip-audit pytest pytest-cov docker
 
       - name: Auto-format code with black
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: black .
 
       - name: Fix imports with isort
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: isort .
 
       - name: Lint code with flake8
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: flake8 . --max-line-length=120 --ignore=F403,F405
 
       - name: Run Bandit security scan
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: bandit -r . --severity-level MEDIUM || true
 
       - name: Run pip-audit dependency scan
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: pip-audit || true
 
       - name: Set up Docker Buildx
+        if: steps.changed-files.outputs.any_changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Create and use Buildx builder instance
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           docker buildx create --name mybuilder --driver docker-container --use || docker buildx use mybuilder
           docker buildx inspect --bootstrap
 
       - name: Build Docker image
+        if: steps.changed-files.outputs.any_changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -56,20 +87,22 @@ jobs:
           load: true
 
       - name: Run tests with coverage
+        if: steps.changed-files.outputs.any_changed == 'true'
         env:
           DOCKER_IMAGE: app:latest
         run: pytest --cov=tools --cov-fail-under=80
 
       - name: Install Trivy
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           sudo apt-get update && sudo apt-get install -y wget
           wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
           sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
 
       - name: Scan Docker image for vulnerabilities
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
 
-      # ✅ Debug: Check secrets are set (without printing values)
       - name: Debug secrets are set
         env:
           DOCKER_USER: ${{ secrets.DOCKER_USER }}
@@ -78,15 +111,16 @@ jobs:
           if [ -z "$DOCKER_USER" ]; then echo "DOCKER_USER secret is missing!"; exit 1; else echo "DOCKER_USER secret is set"; fi
           if [ -z "$DOCKER_PASS" ]; then echo "DOCKER_PASS secret is missing!"; exit 1; else echo "DOCKER_PASS secret is set"; fi
 
-      # ✅ Docker login with secrets
       - name: Docker login
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
 
-      # ✅ Debug: Verify Docker login
       - name: Verify Docker login
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: docker info
 
       - name: Tag and push Docker image
+        if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           docker tag app:latest dileep1506/python:latest
           docker push dileep1506/python:latest
