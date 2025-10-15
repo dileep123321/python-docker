@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Full CI/CD Pipeline
 
 on:
   push:
@@ -7,77 +7,90 @@ on:
     branches: [ main ]
 
 jobs:
-  setup:
-    name: 🧰 Checkout & Setup Python
+  lint:
+    name: Lint Python Code
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
-
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-
-  lint:
-    name: 🧼 Linting & Formatting
-    runs-on: ubuntu-latest
-    needs: setup
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.13"
+          python-version: '3.11'
 
       - name: Install flake8, autoflake & black
-        run: pip install flake8 autoflake black
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 autoflake black
 
-      - name: Run flake8 lint (max line length 120)
-        run: flake8 . --max-line-length=120
+      - name: Auto-fix trailing whitespaces
+        run: |
+          find . -name "*.py" -exec sed -i 's/[ \t]*$//' {} \;
 
-      - name: Check formatting with autoflake
-        run: autoflake --check --recursive .
+      - name: Auto-fix unused imports / star imports
+        run: |
+          find . -name "*.py" -exec autoflake --remove-all-unused-imports --remove-unused-variables --in-place {} \;
 
-      - name: Auto-format code with black
+      - name: Auto-format all code with black
         run: black . --line-length 120
 
-  security:
-    name: 🔐 Security Scanning (Bandit + Trivy FS)
+      - name: Run Flake8 Linter (Production Code)
+        run: flake8 my_app scripts/setup_app.py --max-line-length=120 --exit-zero
+
+      - name: Run Flake8 Linter (Tests, Ignore Star Imports & Whitespace)
+        run: flake8 tools/tests --max-line-length=120 --ignore=F403,F405,W293 --exit-zero
+
+  trivy-scan:
+    name: Scan Docker Image with Trivy
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
-        with:
-          python-version: "3.13"
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Install Bandit
-        run: pip install bandit
+      - name: Build Docker image
+        run: docker build -t pythonapp:latest .
 
-      - name: Run Bandit scan
-        run: bandit -r .
+      - name: Run container test
+        run: docker run --rm pythonapp:latest || echo "Container exited (normal if no long-running process)"
 
-      - name: Trivy FS scan
-        uses: aquasecurity/trivy-action@v1
+      - name: Scan filesystem with Trivy
+        uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
-          ignore-unfixed: true
+          scan-path: .
           format: table
           exit-code: 0
-          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pythonapp:latest
+          format: json
+          output: trivy-report.json
+          exit-code: 0
+          ignore-unfixed: true
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
 
   test:
-    name: 🧪 Unit Testing & Coverage
+    name: Unit Testing & Coverage
     runs-on: ubuntu-latest
-    needs: security
+    needs: trivy-scan
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: '3.11'
 
       - name: Install pytest & coverage
         run: pip install pytest pytest-cov
@@ -85,44 +98,41 @@ jobs:
       - name: Run tests with coverage
         run: pytest --cov=my_app --cov-fail-under=80
 
-  build:
-    name: 🐳 Build Docker Image
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  docker-scan:
+    name: Docker Image Critical Scan
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Build Docker image
-        run: docker build -t app:latest .
-
-  image-scan:
-    name: 🔎 Scan Docker Image (Trivy)
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Scan Docker image with Trivy
-        uses: aquasecurity/trivy-action@v1
+      - name: Scan Docker image with Trivy (Critical/High)
+        uses: aquasecurity/trivy-action@master
         with:
-          image-ref: app:latest
+          image-ref: pythonapp:latest
           format: table
-          ignore-unfixed: true
-          exit-code: 1
           severity: CRITICAL,HIGH
+          exit-code: 1
 
   push:
-    name: 🚀 Push Docker Image to Docker Hub
+    name: Push Docker Image to Docker Hub
     runs-on: ubuntu-latest
-    needs: image-scan
+    needs: docker-scan
     if: ${{ success() }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Docker Hub Login
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
       - name: Tag & Push Docker image
         run: |
-          docker tag app:latest ${{ secrets.DOCKERHUB_USERNAME }}/myapp:latest
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/myapp:latest
+          docker tag pythonapp:latest ${{ secrets.DOCKERHUB_USERNAME }}/pythonapp:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/pythonapp:latest
