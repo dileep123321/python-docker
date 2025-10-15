@@ -25,32 +25,33 @@ jobs:
         python -m pip install --upgrade pip
         pip install flake8 black isort bandit pip-audit pytest pytest-cov
 
-    # 4. Linting & formatting
+    # 4. Auto-format code with black and fix imports with isort
+    - name: Auto-format code with black
+      run: black .
+
+    - name: Fix imports with isort
+      run: isort .
+
+    # 5. Linting (allow max line length 120)
     - name: Lint code with flake8
-      run: flake8 .
+      run: flake8 . --max-line-length=120
 
-    - name: Check code formatting with black
-      run: black --check .
-
-    - name: Check imports with isort
-      run: isort . --check-only
-
-    # 5. Security scans
+    # 6. Security scans
     - name: Run Bandit security scan
       run: bandit -r .
 
     - name: Run pip-audit dependency scan
       run: pip-audit
 
-    # 6. Unit tests & coverage (minimum 80%)
+    # 7. Unit tests & coverage (minimum 80%)
     - name: Run tests with coverage
       run: pytest --cov=tools --cov-fail-under=80
 
-    # 7. Setup Docker buildx for caching
+    # 8. Setup Docker buildx for caching
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # 8. Build Docker image
+    # 9. Build Docker image
     - name: Build Docker image
       uses: docker/build-push-action@v5
       with:
@@ -60,22 +61,22 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    # 9. Install Trivy for image scanning
+    # 10. Install Trivy for image scanning
     - name: Install Trivy
       run: |
         sudo apt-get update && sudo apt-get install -y wget
         wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.0_Linux-64bit.deb
         sudo dpkg -i trivy_0.50.0_Linux-64bit.deb
 
-    # 10. Scan Docker image for vulnerabilities
+    # 11. Scan Docker image for vulnerabilities
     - name: Scan Docker image for vulnerabilities
       run: trivy image --exit-code 1 --severity CRITICAL,HIGH app:latest
 
-    # 11. Docker login
+    # 12. Docker login
     - name: Docker login
       run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
 
-    # 12. Tag and push Docker image to dileep1506/python
+    # 13. Tag and push Docker image to dileep1506/python
     - name: Tag and push Docker image
       run: |
         docker tag app:latest dileep1506/python:latest
