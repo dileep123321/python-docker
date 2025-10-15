@@ -32,14 +32,17 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install flake8 & autoflake
-        run: pip install flake8 autoflake
+      - name: Install flake8, autoflake & black
+        run: pip install flake8 autoflake black
 
-      - name: Run flake8 lint
-        run: flake8 .
+      - name: Run flake8 lint (max line length 120)
+        run: flake8 . --max-line-length=120
 
       - name: Check formatting with autoflake
         run: autoflake --check --recursive .
+
+      - name: Auto-format code with black
+        run: black . --line-length 120
 
   security:
     name: 🔐 Security Scanning (Bandit + Trivy FS)
