@@ -32,7 +32,8 @@ jobs:
         run: flake8 . --max-line-length=120 --ignore=F403,F405
 
       - name: Run Bandit security scan
-        run: bandit -r . --severity-level MEDIUM || true
+        run: |
+          bandit -r . --severity-level MEDIUM || true
 
       - name: Run pip-audit dependency scan
         run: pip-audit || true
@@ -53,7 +54,6 @@ jobs:
           tags: app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          load: true  # Load image into Docker daemon so Trivy can scan it
 
       - name: Run tests with coverage
         env:
@@ -63,11 +63,11 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.67.2_Linux-64bit.deb
           sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
 
       - name: Scan Docker image for vulnerabilities
-        run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
+        run: trivy image --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
 
       - name: Docker login
         run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
