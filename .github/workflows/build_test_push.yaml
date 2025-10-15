@@ -1,193 +1,98 @@
-name: Build, Test & Push
+name: CI Pipeline - main branch only
+
 on:
   push:
-    branches:
-      - '**'  # all branches
-  schedule:
-    - cron: '22 2 * * 1,3,5'  # every monday, wednesday, friday - at 02:00h
-  workflow_dispatch:
-    inputs:
-      build:
-        description: "Run build steps? (yes/no)"
-        type: boolean
-        required: true
-        default: true
+    branches: [main]
 
 jobs:
-
-  flagTestBuild:
-    # Generate condition: if file/s changed involve changes on the image, or trigger is cron: test & build jobs must run
-    name: "Conditional: run test & build jobs"
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      flag: ${{ env.flag }}
-
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@master
-        with:
-          fetch-depth: 0
-
-      # Perform validation
-      - name: Verify if any of the image-involved files changed
-        id: changed-files
-        uses: tj-actions/changed-files@v11.5
-        with:
-          files: |
-            .dockerignore
-            Dockerfile
-            images.json
-            tools/**
-            scripts/**
-      - name: Set flag for triggering test & build jobs
-        if: ${{ steps.changed-files.outputs.any_changed == 'true' || github.event_name == 'schedule' || github.event.inputs.build == 'true' }}
-        run: echo "flag=true" >> $GITHUB_ENV
-
-  testBuild:
-    # Run "build" tests
-    name: Test (build)
-    runs-on: ubuntu-latest
-    if: ${{ needs.flagTestBuild.outputs.flag == 'true' }}
-    needs:
-      - flagTestBuild
-
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@master
-        with:
-          fetch-depth: 1
-      - name: Setup Python
-        uses: actions/setup-python@master
-        with:
-          python-version: "3.8"
-          architecture: "x64"
-      - name: Install test requirements
-        run: make test-install-requirements
-
-      # Test
-      - name: Test "build"
-        run: make test-build
-
-
-  imagesMatrix:
-    # Parse and set the images matrix to be used by following jobs
-    name: Parse & Set images matrix
-    runs-on: ubuntu-latest
-    if: ${{ needs.flagTestBuild.outputs.flag == 'true' }}
-    needs:
-      - flagTestBuild
-    outputs:
-      matrix: ${{ steps.set_matrix.outputs.matrix }}
-
-    steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@master
-        with:
-          fetch-depth: 1
-      - name: Load & Set matrix variable
-        id: set_matrix
-        run: |
-          echo "::set-output name=matrix::$(echo $(cat images.json) | sed 's/ //g' )"
-
-
-  testNoBuild:
-    # Run "no-build" tests (pre-building image for linux/amd64)
-    name: "[${{ matrix.image.fromImage }}] Test (no-build)"
-    runs-on: ubuntu-latest
-    if: ${{ needs.flagTestBuild.outputs.flag == 'true' }}
-    needs:
-      - flagTestBuild
-      - testBuild
-      - imagesMatrix
     strategy:
-      fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.imagesMatrix.outputs.matrix) }}
-
+        python-version: ["3.12"]
     steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@master
+      - name: Checkout repository  
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          fetch-depth: 1
-      - name: Setup Python
-        uses: actions/setup-python@master
-        with:
-          python-version: "3.8"
-          architecture: "x64"
-      - name: Install test requirements
-        run: make test-install-requirements
-      - name: Set environment variables
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
         run: |
-          echo "fromImage=${{ matrix.image.fromImage }}" >> $GITHUB_ENV
-          echo "toImage=python-git-app:${{ matrix.image.toTag }}" >> $GITHUB_ENV
+          python -m pip install --upgrade pip
+          pip install flake8 black isort bandit pip-audit pytest pytest-cov docker
 
-      # Build
-      - name: Docker cache
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
-        with:
-          key: "DockerPythonGitApp-docker-cache-${{ env.fromImage }}-{hash}"
-          restore-keys: "DockerPythonGitApp-docker-cache-${{ env.fromImage }}"
-      - name: Build
-        run: make build FROM_IMAGE=${{ env.fromImage }} TO_IMAGE=${{ env.toImage }}
-      - name: Test "no-build" (arch=default)
-        run: make test-nobuild FROM_IMAGE=${{ env.toImage }}
+      - name: Auto-format code with black
+        run: black .
 
+      - name: Fix imports with isort
+        run: isort .
 
-  buildPush:
-    # Build and push to DockerHub if current branch is "master"
-    name: "[${{ matrix.image.fromImage }} -> ${{ matrix.image.toTag }}] Build & Push (multiarch)"
+      - name: Lint code with flake8
+        run: flake8 . --max-line-length=120 --ignore=F403,F405
+
+      - name: Run Bandit security scan
+        run: bandit -r . --severity-level MEDIUM || true
+
+      - name: Run pip-audit dependency scan
+        run: pip-audit || true
+
+      - name: Run tests with coverage
+        env:
+          DOCKER_IMAGE: app:latest
+        run: pytest --cov=tools --cov-fail-under=80
+
+  build-and-push:
     runs-on: ubuntu-latest
-    if: ${{ needs.flagTestBuild.outputs.flag == 'true' }}
-    needs:
-      - flagTestBuild
-      - testBuild
-      - testNoBuild
-      - imagesMatrix
-    strategy:
-      fail-fast: false
-      matrix:
-        image: ${{ fromJson(needs.imagesMatrix.outputs.matrix) }}
-
+    needs: test
     steps:
-      # Setup
-      - name: Checkout
-        uses: actions/checkout@master
-        with:
-          fetch-depth: 1
-      - name: Install QEMU
-        uses: docker/setup-qemu-action@v1
-      - name: Install Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      - name: Set environment variables
-        run: |
-          echo "fromImage=${{ matrix.image.fromImage }}" >> $GITHUB_ENV
-          echo "toTag=${{ matrix.image.toTag }}" >> $GITHUB_ENV
-          echo "arch=${{ matrix.image.arch }}" >> $GITHUB_ENV
-          echo "buildxPush=false" >> $GITHUB_ENV
-      - name: Set buildx push flag
-        if: github.ref == 'refs/heads/master'
-        run: |
-          echo "buildxPush=true" >> $GITHUB_ENV
+      - name: Checkout repository  
+        uses: actions/checkout@v4
 
-      # Docker login
-      - name: Login to DockerHub
-        if: ${{ env.buildxPush == 'true' }}
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKER_USER }}
-          password: ${{ secrets.DOCKER_PASS }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # Build & push for all archs
-      - name: Docker cache
-        uses: satackey/action-docker-layer-caching@v0.0.11
-        continue-on-error: true
+      - name: Create and use Buildx builder instance
+        run: |
+          docker buildx create --name mybuilder --driver docker-container --use || docker buildx use mybuilder
+          docker buildx inspect --bootstrap
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
         with:
-          key: "DockerPythonGitApp-docker-cache-${{ matrix.base_tag }}-{hash}"
-          restore-keys: "DockerPythonGitApp-docker-cache-${{ matrix.base_tag }}"
-      - name: Build & Push for all archs
-        run: make buildx FROM_IMAGE=${{ env.fromImage }} TO_TAG=${{ env.toTag }} BUILDX_PUSH=${{ env.buildxPush }} ARCH=${{ env.arch }}
+          context: .
+          push: false
+          tags: app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget
+          wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
+          sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
+
+      - name: Scan Docker image for vulnerabilities
+        run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
+
+      - name: Debug secrets are set
+        env:
+          DOCKER_USER: ${{ secrets.DOCKER_USER }}
+          DOCKER_PASS: ${{ secrets.DOCKER_PASS }}
+        run: |
+          if [ -z "$DOCKER_USER" ]; then echo "DOCKER_USER secret is missing!"; exit 1; else echo "DOCKER_USER secret is set"; fi
+          if [ -z "$DOCKER_PASS" ]; then echo "DOCKER_PASS secret is missing!"; exit 1; else echo "DOCKER_PASS secret is set"; fi
+
+      - name: Docker login
+        run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      - name: Verify Docker login
+        run: docker info
+
+      - name: Tag and push Docker image
+        run: |
+          docker tag app:latest dileep1506/python:latest
+          docker push dileep1506/python:latest
