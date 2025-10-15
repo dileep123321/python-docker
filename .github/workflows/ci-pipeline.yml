@@ -70,7 +70,10 @@ jobs:
         run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
 
       - name: Docker login
-        run: echo "${{ secrets.DOCKER_PAT }}" | docker login -u dileep1506 --password-stdin
+        run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      - name: Verify Docker login
+        run: docker info
 
       - name: Tag and push Docker image
         run: |
