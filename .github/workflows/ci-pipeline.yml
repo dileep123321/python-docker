@@ -52,6 +52,7 @@ jobs:
         with:
           context: .
           push: false
+          load: true               # <-- This line added to load image locally
           tags: app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -64,9 +65,8 @@ jobs:
       - name: Install Trivy
         run: |
           sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
+          wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.67.2_Linux-64bit.deb
           sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
-          rm trivy_0.67.2_Linux-64bit.deb
 
       - name: Scan Docker image for vulnerabilities
         run: trivy image --exit-code 1 --severity CRITICAL,HIGH app:latest
