@@ -9,27 +9,9 @@ on:
       - bugfix/**
 
 jobs:
-  # Optional: keep the conditional job for structure, but it won't skip anything
-  conditional-check:
-    name: Conditional: run test & build jobs
-    runs-on: ubuntu-latest
-    outputs:
-      should_run: "true"   # always true now
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Verify if any of the image-involved files changed
-        run: echo "Skipping conditional logic — always triggering test & build"
-
-      - name: Set flag for triggering test & build jobs
-        run: echo "should_run=true" >> $GITHUB_OUTPUT
-
   test:
     name: Run tests, linting, and scans
     runs-on: ubuntu-latest
-    needs: conditional-check
-    if: always()   # ensures it runs even if conditional-check fails
     strategy:
       matrix:
         python-version: ["3.12"]
@@ -72,7 +54,7 @@ jobs:
     name: Build, Scan & Push Docker Image
     runs-on: ubuntu-latest
     needs: test
-    if: always()   # always run even if tests fail
+    if: always()   # ensures this job runs even if tests fail
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
