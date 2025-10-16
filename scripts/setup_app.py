@@ -27,8 +27,8 @@ class Settings:
         self.requirements_file = os.path.join(self.app_dir, self.REQUIREMENTS_FILENAME)
 
 
-def log(message):
-    print(f"[{datetime.now().strftime('%y/%m/%d %H:%M:%S')}] {message}", flush=True)
+def log(msg):
+    print(f"[{datetime.now().strftime('%y/%m/%d %H:%M:%S')}] {msg}", flush=True)
 
 
 def is_first_run(settings):
@@ -53,15 +53,16 @@ def clone(settings):
         subprocess.run(
             ["git", "clone", *branch_args, settings.git_repository, settings.app_dir],
             check=True,
-            capture_output=True,
-            text=True
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         log("App cloned successfully!")
     except subprocess.CalledProcessError as e:
         log("Git clone failed!")
-        log("stdout:\n" + e.stdout)
-        log("stderr:\n" + e.stderr)
-        raise Exception("Git Clone failed!") from e
+        log(f"stdout:\n{e.stdout}")
+        log(f"stderr:\n{e.stderr}")
+        raise Exception("Git Clone failed!")
 
 
 def install_requirements(settings):
