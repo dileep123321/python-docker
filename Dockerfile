@@ -1,31 +1,26 @@
-# Base Python image
-FROM python:3.12-slim
+# syntax=docker/dockerfile:1
+ARG FROM_IMAGE=python:3.12-slim
+FROM ${FROM_IMAGE}
 
-# Arguments
-ARG APP_NAME=python-docker
-ARG GIT_REPOSITORY=https://github.com/dileep123321/python-docker.git
+# Environment setup
+ENV APP_NAME="python-docker" \
+    GIT_REPOSITORY="https://github.com/dileep123321/python-docker.git" \
+    GIT_BRANCH="" \
+    PYTHONUNBUFFERED=1
+
+# Add dependencies
+RUN apt-get update -y && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+# Add non-root user
 ARG USERNAME=user
-
-# Install git and upgrade pip as root
-RUN apt-get update && apt-get install -y git && pip install --upgrade pip
-
-# Create non-root user
 RUN useradd -ms /bin/bash ${USERNAME}
 
-# Copy scripts folder (contains setup_app.py and entrypoint.sh) as root
-COPY scripts ./scripts
-COPY scripts/entrypoint.sh /home/${USERNAME}/entrypoint.sh
-
-# Make entrypoint executable as root
-RUN chmod +x /home/${USERNAME}/entrypoint.sh
-
-# Switch to non-root user after all root-level operations
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
-# Environment variables
-ENV APP_NAME=${APP_NAME} \
-    GIT_REPOSITORY=${GIT_REPOSITORY}
+# Copy the setup script
+COPY scripts/setup_app.py /home/${USERNAME}/scripts/setup_app.py
+RUN chmod +x /home/${USERNAME}/scripts/setup_app.py
 
-# Entrypoint
-ENTRYPOINT ["/home/user/entrypoint.sh"]
+# Default command
+CMD ["python", "-u", "/home/user/scripts/setup_app.py"]
