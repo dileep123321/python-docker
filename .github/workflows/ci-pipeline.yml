@@ -1,106 +1,68 @@
-name: CI Pipeline - Always Run
+name: CI Pipeline - main branch only
 
 on:
   push:
-    branches:
-      - main
-      - dev
-      - feature/**
-      - bugfix/**
+    branches: [main]
 
 jobs:
   test:
-    name: Run tests, linting, and scans
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.12"]
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          pip install -U pip
           pip install flake8 black isort bandit pip-audit pytest pytest-cov docker
 
-      - name: Auto-format code with black
-        run: black .
-
-      - name: Fix imports with isort
-        run: isort .
-
-      - name: Lint code with flake8
-        run: flake8 . --max-line-length=120 --ignore=F403,F405
-
-      - name: Run Bandit security scan
-        run: bandit -r . --severity-level MEDIUM || true
-
-      - name: Run pip-audit dependency scan
-        run: pip-audit || true
+      - name: Lint, Format & Security
+        run: |
+          black .
+          isort .
+          flake8 . --max-line-length=120 --ignore=F403,F405
+          bandit -r . --severity-level MEDIUM || true
+          pip-audit || true
 
       - name: Run tests with coverage
-        env:
-          DOCKER_IMAGE: app:latest
-        run: pytest --cov=tools --cov-fail-under=80 || true
+        run: pytest --cov=tools --cov-fail-under=80
 
   build-and-push:
-    name: Build, Scan & Push Docker Image
     runs-on: ubuntu-latest
     needs: test
-    if: always()   # ensures this job runs even if tests fail
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Create and use Buildx builder instance
-        run: |
-          docker buildx create --name mybuilder --driver docker-container --use || docker buildx use mybuilder
-          docker buildx inspect --bootstrap
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false
           tags: app:latest
+          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          load: true
 
-      - name: Install Trivy
+      - name: Install Trivy & Scan Image
         run: |
           sudo apt-get update && sudo apt-get install -y wget
-          wget https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
+          wget -q https://github.com/aquasecurity/trivy/releases/download/v0.67.2/trivy_0.67.2_Linux-64bit.deb
           sudo dpkg -i trivy_0.67.2_Linux-64bit.deb
+          trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest
 
-      - name: Scan Docker image for vulnerabilities
-        run: trivy image --scanners vuln --exit-code 0 --severity CRITICAL,HIGH --ignore-unfixed app:latest || true
-
-      - name: Debug secrets are set
+      - name: Docker login & push
         env:
           DOCKER_USER: ${{ secrets.DOCKER_USER }}
           DOCKER_PASS: ${{ secrets.DOCKER_PASS }}
         run: |
-          if [ -z "$DOCKER_USER" ]; then echo "❌ DOCKER_USER secret is missing!"; exit 1; else echo "✅ DOCKER_USER secret is set"; fi
-          if [ -z "$DOCKER_PASS" ]; then echo "❌ DOCKER_PASS secret is missing!"; exit 1; else echo "✅ DOCKER_PASS secret is set"; fi
-
-      - name: Docker login
-        run: echo "${{ secrets.DOCKER_PASS }}" | docker login -u "${{ secrets.DOCKER_USER }}" --password-stdin
-
-      - name: Verify Docker login
-        run: docker info
-
-      - name: Tag and push Docker image
-        run: |
+          [ -z "$DOCKER_USER" ] && echo "❌ Missing DOCKER_USER secret" && exit 1
+          [ -z "$DOCKER_PASS" ] && echo "❌ Missing DOCKER_PASS secret" && exit 1
+          echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
           docker tag app:latest dileep1506/python:latest
           docker push dileep1506/python:latest
