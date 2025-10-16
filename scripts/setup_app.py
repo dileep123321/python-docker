@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
-"""SETUP APP Script
-"""
+"""SETUP APP Script"""
 
 import os
 import subprocess
@@ -63,7 +62,7 @@ def clone(settings):
     branch_settings = ["--branch", settings.git_branch] if settings.git_branch else []
 
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["git", "clone", *branch_settings, settings.git_repository, settings.app_dir],
             check=True,
             capture_output=True,
@@ -74,7 +73,7 @@ def clone(settings):
         log("Git clone failed!")
         log("stdout:\n" + e.stdout)
         log("stderr:\n" + e.stderr)
-        raise Exception("Git Clone failed!")
+        raise Exception("Git Clone failed!") from e
 
 
 def install_requirements(settings):
@@ -93,20 +92,19 @@ def run():
     """Main run function"""
     try:
         settings = Settings()
-        args = (settings,)
 
-        if is_first_run(*args):
+        if is_first_run(settings):
             log("This is container first run, running app installing process...")
-            clear_output_dir(*args)
-            clone(*args)
-            install_requirements(*args)
-            save_setup_done(*args)
+            clear_output_dir(settings)
+            clone(settings)
+            install_requirements(settings)
+            save_setup_done(settings)
             log("Setup completed! Ready to run the app!")
         else:
             log("App already installed")
 
     except Exception as ex:
-        log("Error! {}".format(ex))
+        log(f"Error! {ex}")
         exit(1)
 
 
