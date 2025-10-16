@@ -14,60 +14,44 @@ class Settings:
     REQUIREMENTS_FILENAME = "requirements.txt"
 
     def __init__(self):
-        # Read env vars with defaults
         self.app_name = os.getenv("APP_NAME", "python-docker")
         self.git_repository = os.getenv("GIT_REPOSITORY")
-        self.git_branch = os.getenv("GIT_BRANCH")  # optional
+        self.git_branch = os.getenv("GIT_BRANCH")
 
         if not self.git_repository:
-            raise Exception("GIT_REPOSITORY environment variable is required")
+            raise Exception("Environment variable GIT_REPOSITORY is required")
 
         self.base_dir = os.path.expanduser("~")
-        self.first_run_file = self.join_home(self.FIRST_RUN_FILENAME)
-        self.app_dir = self.join_home(self.app_name)
-        self.requirements_file = self.join_app(self.REQUIREMENTS_FILENAME)
-
-    def join_home(self, path):
-        return os.path.join(self.base_dir, path)
-
-    def join_app(self, path):
-        return os.path.join(self.app_dir, path)
+        self.first_run_file = os.path.join(self.base_dir, self.FIRST_RUN_FILENAME)
+        self.app_dir = os.path.join(self.base_dir, self.app_name)
+        self.requirements_file = os.path.join(self.app_dir, self.REQUIREMENTS_FILENAME)
 
 
 def log(message):
-    """Print log line with current datetime"""
     print(f"[{datetime.now().strftime('%y/%m/%d %H:%M:%S')}] {message}", flush=True)
 
 
 def is_first_run(settings):
-    """Return True if this is the first time the container runs"""
     return not os.path.isfile(settings.first_run_file)
 
 
 def save_setup_done(settings):
-    """Store a file to mark setup complete"""
-    open(settings.first_run_file, "w").close()
+    os.mknod(settings.first_run_file)
     log("Saved 'App installed' status")
 
 
 def clear_output_dir(settings):
-    """Clear output directories"""
     with suppress(FileNotFoundError):
-        if os.path.isdir(settings.app_dir):
-            subprocess.run(["rm", "-rf", settings.app_dir], check=False)
-            log("Cleared old app directory")
+        os.rmdir(settings.app_dir)
+        log("Cleared output directories")
 
 
 def clone(settings):
-    """Clone the app through Git"""
     log("Cloning app through Git...")
-    branch_settings = ["--branch", settings.git_branch] if settings.git_branch else []
-
-    os.makedirs(os.path.dirname(settings.app_dir), exist_ok=True)
-
+    branch_args = ["--branch", settings.git_branch] if settings.git_branch else []
     try:
         subprocess.run(
-            ["git", "clone", *branch_settings, settings.git_repository, settings.app_dir],
+            ["git", "clone", *branch_args, settings.git_repository, settings.app_dir],
             check=True,
             capture_output=True,
             text=True
@@ -81,7 +65,6 @@ def clone(settings):
 
 
 def install_requirements(settings):
-    """Install Python package requirements from requirements.txt"""
     if os.path.isfile(settings.requirements_file):
         log("Installing requirements via pip...")
         result = subprocess.call(["pip", "install", "--user", "-r", settings.requirements_file])
@@ -89,25 +72,23 @@ def install_requirements(settings):
             raise Exception("Pip install failed!")
         log("Requirements installed!")
     else:
-        log("No requirements.txt file found — skipping install")
+        log("No requirements.txt found, skipping install.")
 
 
 def run():
-    """Main run function"""
     try:
         settings = Settings()
         if is_first_run(settings):
-            log("This is container first run, running setup...")
+            log("This is container first run, running app installing process...")
             clear_output_dir(settings)
             clone(settings)
             install_requirements(settings)
             save_setup_done(settings)
-            log("✅ Setup completed successfully! App ready.")
+            log("Setup completed successfully!")
         else:
-            log("App already installed — skipping setup.")
-
+            log("App already installed")
     except Exception as ex:
-        log(f"❌ Error during setup: {ex}")
+        log(f"Error! {ex}")
         exit(1)
 
 
